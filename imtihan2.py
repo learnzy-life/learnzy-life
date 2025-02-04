@@ -21,19 +21,30 @@ def init_session():
 
 init_session()
 
-# Load questions with caching
+# Load questions with exact column matching
 @st.cache_data(ttl=3600)
 def load_questions():
     try:
         df = pd.read_csv(SHEET_URL)
+        
+        # Clean column names
+        df.columns = df.columns.str.strip()
+        
+        # Verify required columns
         required_columns = [
             'Question ID', 'Question Text', 'Option A', 'Option B',
             'Option C', 'Option D', 'Correct Answer', 'Subject', 'Topic',
             'Sub- Topic', 'Difficulty Level', 'Question Type', 'Cognitive Level'
         ]
+        
+        missing = [col for col in required_columns if col not in df.columns]
+        if missing:
+            st.error(f"Missing columns: {', '.join(missing)}")
+            return []
+            
         return df[required_columns].to_dict(orient='records')
     except Exception as e:
-        st.error(f"Failed to load questions: {str(e)}")
+        st.error(f"Data loading failed: {str(e)}")
         return []
 
 questions = load_questions()
@@ -50,7 +61,7 @@ def authenticate():
             else:
                 st.error("Invalid credentials")
 
-# Tag analysis function
+# Analysis functions
 def analyze_tag(tag_name):
     analysis = {}
     for q in questions:
@@ -58,24 +69,23 @@ def analyze_tag(tag_name):
         ans = st.session_state.user_answers.get(q['Question ID'], {})
         
         if tag_value not in analysis:
-            analysis[tag_value] = {'total': 0, 'correct': 0, 'time': 0}
+            analysis[tag_value] = {'total':0, 'correct':0, 'time':0}
         
         analysis[tag_value]['total'] += 1
-        analysis[tag_value]['time'] += ans.get('time_taken', 0)
+        analysis[tag_value]['time'] += ans.get('time_taken',0)
         if ans.get('selected') == q['Correct Answer']:
             analysis[tag_value]['correct'] += 1
     
     for tag in analysis:
         stats = analysis[tag]
-        stats['accuracy'] = (stats['correct'] / stats['total']) * 100
-        stats['avg_time'] = stats['time'] / stats['total']
+        stats['accuracy'] = (stats['correct']/stats['total'])*100
+        stats['avg_time'] = stats['time']/stats['total']
     
     return analysis
 
-# Show results page
 def show_results():
     st.balloons()
-    st.title("📊 Comprehensive Analysis Report")
+    st.title("📊 Comprehensive Performance Report")
     
     # Basic metrics
     total_time = sum(ans['time_taken'] for ans in st.session_state.user_answers.values())
@@ -87,88 +97,91 @@ def show_results():
     # Time Analysis
     with st.expander("⏱ Time Management", expanded=True):
         col1, col2, col3 = st.columns(3)
-        col1.metric("Your Total Time", f"{total_time:.1f}s")
-        col2.metric("Topper's Benchmark", f"{topper_time:.1f}s")
+        col1.metric("Your Time", f"{total_time:.1f}s")
+        col2.metric("Topper Benchmark", f"{topper_time:.1f}s")
         col3.metric("Difference", f"{total_time-topper_time:.1f}s", 
-                   delta="Over time" if total_time > topper_time else "Under time")
+                   delta="Over" if total_time > topper_time else "Under")
         
-        # Time distribution chart
-        time_data = [{'Question': q['Question ID'], 
-                     'Your Time': st.session_state.user_answers[q['Question ID']]['time_taken'],
-                     'Topper Time': st.session_state.user_answers[q['Question ID']]['time_taken'] * 0.7}
-                    for q in questions]
+        # Time chart
+        time_data = [{
+            'Question': q['Question ID'],
+            'Your Time': st.session_state.user_answers[q['Question ID']]['time_taken'],
+            'Topper Time': st.session_state.user_answers[q['Question ID']]['time_taken'] * 0.7
+        } for q in questions]
         st.line_chart(pd.DataFrame(time_data).set_index('Question'))
 
-    # Topic Analysis
-    with st.expander("📚 Subject/Topic Performance"):
-        st.subheader("Subject-wise Breakdown")
+    # Subject/Topic Analysis
+    with st.expander("📚 Subject/Topic Breakdown"):
+        # Subject-wise
+        st.subheader("Subject Performance")
         subject_stats = analyze_tag('Subject')
         for subject, stats in subject_stats.items():
             st.progress(stats['accuracy']/100)
-            st.write(f"**{subject}**")
-            st.caption(f"Accuracy: {stats['accuracy']:.1f}% | Avg Time: {stats['avg_time']:.1f}s")
+            st.write(f"**{subject}**: {stats['accuracy']:.1f}% | Avg Time: {stats['avg_time']:.1f}s")
         
+        # Sub-topic
         st.subheader("Sub-topic Analysis")
         subtopic_stats = analyze_tag('Sub- Topic')
         for subtopic, stats in subtopic_stats.items():
             col1, col2 = st.columns(2)
-            col1.metric(subtopic, f"{stats['accuracy']:.1f}%", "Accuracy")
+            col1.metric(subtopic, f"{stats['accuracy']:.1f}%")
             col2.metric("Avg Time", f"{stats['avg_time']:.1f}s")
 
-    # Advanced Tag Analysis
-    with st.expander("🔍 Deep Dive Analysis"):
-        tabs = st.tabs(["Difficulty", "Question Type", "Cognitive Level"])
+    # Advanced Analysis
+    with st.expander("🔍 Deep Insights"):
+        tabs = st.tabs(["Difficulty", "Question Type", "Cognitive"])
         
-        with tabs[0]:  # Difficulty
+        # Difficulty
+        with tabs[0]:
             diff_stats = analyze_tag('Difficulty Level')
             for level in ['Easy', 'Medium', 'Hard']:
                 if level in diff_stats:
-                    st.write(f"**{level} Level**")
+                    st.write(f"**{level}**")
                     col1, col2 = st.columns(2)
                     col1.metric("Accuracy", f"{diff_stats[level]['accuracy']:.1f}%")
                     col2.metric("Avg Time", f"{diff_stats[level]['avg_time']:.1f}s")
         
-        with tabs[1]:  # Question Type
+        # Question Type
+        with tabs[1]:
             type_stats = analyze_tag('Question Type')
-            st.bar_chart(pd.DataFrame(type_stats).T[['accuracy']])
+            st.bar_chart(pd.DataFrame(type_stats).T['accuracy'])
         
-        with tabs[2]:  # Cognitive Level
+        # Cognitive Level
+        with tabs[2]:
             cog_stats = analyze_tag('Cognitive Level')
-            cognitive_order = ['Remember', 'Understand', 'Apply', 'Analyze']
-            for level in cognitive_order:
+            for level in ['Remember', 'Understand', 'Apply', 'Analyze']:
                 if level in cog_stats:
                     st.write(f"**{level}**")
                     st.progress(cog_stats[level]['accuracy']/100)
-                    st.caption(f"{cog_stats[level]['correct']}/{cog_stats[level]['total']} correct")
 
     # Recommendations
-    st.header("🚀 Personalized Improvement Plan")
+    st.header("🚀 Improvement Plan")
     
-    # Weak topics
+    # Weak subtopics
     weak_subtopics = [k for k,v in subtopic_stats.items() if v['accuracy'] < 70]
     if weak_subtopics:
-        st.error(f"**Priority Subtopics:** {', '.join(weak_subtopics)}")
+        st.error(f"**Focus Subtopics:** {', '.join(weak_subtopics)}")
     
-    # Difficulty recommendations
-    weak_difficulty = [k for k,v in diff_stats.items() if v['accuracy'] < 70]
-    if weak_difficulty:
-        st.warning(f"**Focus Difficulty:** Practice more {', '.join(weak_difficulty)} level questions")
+    # Difficulty
+    weak_diff = [k for k,v in analyze_tag('Difficulty Level').items() if v['accuracy'] < 70]
+    if weak_diff:
+        st.warning(f"**Practice More:** {', '.join(weak_diff)} level questions")
     
-    # Cognitive recommendations
-    weak_cognitive = [k for k,v in cog_stats.items() if v['accuracy'] < 70]
-    if weak_cognitive:
-        st.info(f"**Skill Development:** Improve {', '.join(weak_cognitive)} level questions")
+    # Cognitive
+    weak_cog = [k for k,v in cog_stats.items() if v['accuracy'] < 70]
+    if weak_cog:
+        st.info(f"**Develop Skills:** {', '.join(weak_cog)} level questions")
 
-# Question display
+# Question Display
 def display_question(q):
     st.subheader(f"Question {st.session_state.current_question + 1}")
     st.markdown(f"**{q['Question Text']}**")
     
     options = [q['Option A'], q['Option B'], q['Option C'], q['Option D']]
-    answer = st.radio("Choose your answer:", options, key=f"q{st.session_state.current_question}")
+    answer = st.radio("Choose answer:", options, key=f"q{st.session_state.current_question}")
     
     if st.button("Next ➡️"):
-        # Record answer
+        # Record response
         st.session_state.user_answers[q['Question ID']] = {
             'selected': chr(65 + options.index(answer)),
             'correct': q['Correct Answer'],
@@ -178,8 +191,8 @@ def display_question(q):
         st.session_state.start_time = time.time()
         st.rerun()
 
-# Main app flow
-st.title("AI-Powered Mock Test Platform 🚀")
+# Main App
+st.title("AI Mock Test Platform 🚀")
 
 if not st.session_state.authenticated:
     authenticate()
