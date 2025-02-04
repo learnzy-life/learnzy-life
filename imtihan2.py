@@ -5,7 +5,7 @@ import csv
 import os
 
 # Configuration
-GSHEET_URL = 'https://docs.google.com/spreadsheets/d/your-sheet-id/pub?output=csv'
+GSHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR4BK9IQmKNdiw3Gx_BLj_3O_uAKmt4SSEwmqzGldFu0DhMnKQ4QGOZZQ1AsY-6AbbHgAGjs5H_gIuV/pubhtml?gid=0&single=true'
 USERS_DB = {'user1': 'password1', 'user2': 'password2'}
 
 # Initialize session state
